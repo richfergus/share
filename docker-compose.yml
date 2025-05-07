@@ -31,7 +31,6 @@ services:
       - "587:${EMAIL_PORT}"
     volumes:
       - ./server:/app
-      
       - ./server/hostedFiles:/app/public/hostedFiles
     working_dir: /app
     command: /bin/sh -c "sleep 10 && npm run start-prod"
