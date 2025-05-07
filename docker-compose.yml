@@ -1,19 +1,25 @@
 services:
-
   nginx:
-    image: ${ASD_CLIENT_IMAGE}
+    image: fergus/asd_client:v1.4.1
     container_name: ASD_Client
     networks:
       asdNet:
         ipv4_address: 192.168.40.42
     ports:
       - "443:${CLIENT_PORT}"
-    depends_on:
-      - app
-    command: /bin/sh -c "while [ ! -f /etc/nginx/ssl/privatekey.key ] || [ ! -f /etc/nginx/ssl/certificate.crt ]; do echo '⏳ Waiting for certs...'; sleep 2; done && echo '✅ Certs ready. Starting nginx!' && nginx -g 'daemon off;'"
     volumes:
       - ./server/hostedFiles:/usr/share/nginx/app/hostedFiles
-
+      # - ./client/:/usr/share/nginx/app/
+      # - ./server/hostedFiles:/usr/share/nginx/app/hostedFiles
+      # - ./client/localConfigFiles/certs:/etc/nginx/ssl
+      # - ./client/localConfigFiles/nginx/nginx.conf:/etc/nginx/nginx.conf
+      # - ./client/localConfigFiles/nginx/400.html:/usr/share/nginx/html/400.html
+      # - ./client/localConfigFiles/nginx/496.html:/usr/share/nginx/html/496.html
+      # - ./client/localConfigFiles/nginx-logs:/var/log/nginx
+    depends_on:
+      - app
+    # command: /bin/sh -c "while [ ! -f /etc/nginx/ssl/privatekey.key ] || [ ! -f /etc/nginx/ssl/certificate.crt ]; do echo '⏳ Waiting for certs...'; sleep 2; done && faketime '2024-01-01 12:00:00' nginx -g 'daemon off;'"
+    command: /bin/sh -c "while [ ! -f /etc/nginx/ssl/privatekey.key ] || [ ! -f /etc/nginx/ssl/certificate.crt ]; do echo '⏳ Waiting for certs...'; sleep 2; done && echo '✅ Certs ready. Starting nginx!' && nginx -g 'daemon off;'"
   app:
     image: ${ASD_SERVER_IMAGE}
     container_name: ASD_Server
@@ -23,10 +29,10 @@ services:
     ports:
       - "8080:${WEB_PORT}"
       - "587:${EMAIL_PORT}"
-
     volumes:
-      - ./server/certs:/app/server/certs
-      - ./server/hostedFiles:/app/hostedFiles  # <-- FIXED
+      - ./server:/app
+      # - ./client/localConfigFiles/certs:/app/server/certs
+      - ./server/hostedFiles:/app/public/hostedFiles
     working_dir: /app
     command: /bin/sh -c "sleep 10 && npm run start-prod"
     environment:
@@ -44,7 +50,7 @@ services:
       - asdSql
 
   asdSql:
-    image: "${ASD_DB_IMAGE}"
+    image: "fergus/asd_db:v1.3.0.6"
     container_name: ASD_Db
     networks:
       asdNet:
@@ -58,6 +64,43 @@ services:
     ports:
       - "1433:${DB_PORT}"
 
+  acnSql:
+    image: mcr.microsoft.com/mssql/server:2019-latest
+    container_name: ACN
+    hostname: ACN
+    networks:
+      asdNet:
+        ipv4_address: 192.168.40.45
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
+      - MSSQL_PID=Express
+      - ODBCSYSINI=/etc
+      - MSSQL_OPTS=
+    ports:
+      - "1435:1433"
+    command:
+      - /bin/bash
+      - -c
+      - |
+         echo "Starting SQL Server..."
+         /opt/mssql/bin/sqlservr &
+         echo "Waiting for SQL Server to fully start..."
+         sleep 30
+         echo "Running the acn_init.sql script..."
+         /opt/mssql-tools18/bin/sqlcmd -S localhost -U '${DB_USER_ACN}' -P '${ACN_DB_Password}' -i /script/acn_init.sql -C
+         if [ $? -eq 0 ]; then
+           echo "SQL script executed successfully."
+         else
+           echo "Failed to execute the SQL script."
+         fi
+         wait
+    volumes:
+      - ./sql-scripts:/script
+      - ./db/ACNDBs/:/mnt/sqlserver
+      - ./db/ACNDBs/ACN.mdf:/mnt/sqlserver/ACN.mdf
+      - ./db/ACNDBs/ACN_log.ldf:/mnt/sqlserver/ACN_log.ldf
+
 networks:
   asdNet:
     driver: bridge
@@ -65,3 +108,11 @@ networks:
       driver: default
       config:
         - subnet: 192.168.40.0/23
+
+volumes:
+  hostedFiles:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /Users/victory/Desktop/Lulius/important/projects/docker/asdserver/client/hostedFiles
