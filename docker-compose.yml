@@ -1,4 +1,4 @@
-services:
+services: 
   nginx:
     image: fergus/asd_client:v1.4.1
     container_name: ASD_Client
