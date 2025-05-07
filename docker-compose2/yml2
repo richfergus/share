@@ -1,0 +1,66 @@
+services:
+
+  nginx:
+    image: ${ASD_CLIENT_IMAGE}
+    container_name: ASD_Client
+    networks:
+      asdNet:
+        ipv4_address: 192.168.40.42
+    ports:
+      - "443:${CLIENT_PORT}"
+    depends_on:
+      - app
+    command: /bin/sh -c "while [ ! -f /etc/nginx/ssl/privatekey.key ] || [ ! -f /etc/nginx/ssl/certificate.crt ]; do echo '⏳ Waiting for certs...'; sleep 2; done && echo '✅ Certs ready. Starting nginx!' && nginx -g 'daemon off;'"
+    volumes:
+      - ./server/hostedFiles:/usr/share/nginx/app/hostedFiles
+
+  app:
+    image: ${ASD_SERVER_IMAGE}
+    container_name: ASD_Server
+    networks:
+      asdNet:
+        ipv4_address: 192.168.40.40
+    ports:
+      - "8080:${WEB_PORT}"
+      - "587:${EMAIL_PORT}"
+
+    volumes:
+      - ./server/hostedFiles:/app/hostedFiles  # <-- FIXED
+    working_dir: /app
+    command: /bin/sh -c "sleep 10 && npm run start-prod"
+    environment:
+      - DB_DashBoard_HOST=asdSql
+      - DB_DashBoard_PORT=${DB_PORT}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - TZ=${TZ}
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+          cpus: '2.0'
+    depends_on:
+      - asdSql
+
+  asdSql:
+    image: "${ASD_DB_IMAGE}"
+    container_name: ASD_Db
+    networks:
+      asdNet:
+        ipv4_address: 192.168.40.41
+    environment:
+      - ACCEPT_EULA=Y
+      - MSSQL_SA_PASSWORD=${MSSQL_SA_PASSWORD}
+      - MSSQL_PID=Express
+    volumes:
+      - ./ID:/var/opt/mssql/data
+    ports:
+      - "1433:${DB_PORT}"
+
+networks:
+  asdNet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.40.0/23
